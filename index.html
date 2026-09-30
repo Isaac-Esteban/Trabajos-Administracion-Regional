@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Panel de trabajos · Administración regional</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root {
+    --bg: #f5f6f4; --panel: #ffffff; --ink: #1d2a2a; --muted: #5d6b6b;
+    --line: #dde2df; --brand: #1f5c57; --ok: #2f7d4f; --warn: #a3650a; --idea: #3f5285; --alta: #a5301f;
+    --ok-bg: #e4f2e9; --warn-bg: #fbeed6; --idea-bg: #e6eaf5; --alta-bg: #f8e1dd;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #131a1a; --panel: #1b2424; --ink: #e6ecea; --muted: #9aa9a6; --line: #2c3838;
+      --brand: #62b5ac; --ok: #6cc28c; --warn: #e2a84a; --idea: #93a6de; --alta: #f08d7c;
+      --ok-bg: #1d3327; --warn-bg: #3a2d14; --idea-bg: #222b45; --alta-bg: #40201b; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 16px/1.5 "Segoe UI", system-ui, -apple-system, Roboto, sans-serif; }
+  header, main { max-width: 1120px; margin: 0 auto; padding-left: 20px; padding-right: 20px; }
+  header { padding-top: 28px; padding-bottom: 4px; }
+  h1 { font-size: 1.6rem; margin: 0 0 4px; }
+  h2 { font-size: 1.15rem; margin: 0 0 10px; }
+  .sub { color: var(--muted); margin: 0; }
+  main { padding-top: 14px; padding-bottom: 60px; }
+  :focus-visible { outline: 3px solid var(--brand); outline-offset: 2px; }
+
+  .acciones { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 14px 0 8px; }
+  .btn { font: inherit; font-weight: 600; padding: 9px 16px; border-radius: 6px; cursor: pointer;
+    border: 1px solid var(--brand); background: var(--panel); color: var(--brand); text-decoration: none; display: inline-block; }
+  .btn.primario { background: var(--brand); color: var(--panel); }
+  .btn:hover { filter: brightness(1.08); }
+  input[type=file] { display: none; }
+  #estado { margin: 8px 0 4px; padding: 10px 14px; border-radius: 8px; background: var(--idea-bg); color: var(--ink); font-size: .92rem; }
+  #estado.aviso { background: var(--warn-bg); }
+  #estado ul { margin: 6px 0 0 18px; padding: 0; }
+  body.arrastrando::after { content: "Suelta el Excel para cargarlo"; position: fixed; inset: 0; display: grid; place-items: center;
+    background: color-mix(in srgb, var(--brand) 85%, transparent); color: #fff; font-size: 1.6rem; font-weight: 700; z-index: 10; }
+
+  .resumen { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin: 16px 0 10px; }
+  .dato { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px; }
+  .dato b { display: block; font-size: 1.4rem; }
+  .dato span { color: var(--muted); font-size: .88rem; }
+  .avance { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px; margin-bottom: 20px; }
+  .avance .fila { display: flex; justify-content: space-between; font-size: .92rem; margin-bottom: 6px; }
+  .barra-fondo { height: 14px; background: var(--line); border-radius: 99px; overflow: hidden; }
+  .barra-relleno { height: 100%; background: var(--ok); }
+
+  .filtros { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; margin-bottom: 14px; }
+  .filtros label { display: flex; flex-direction: column; font-size: .85rem; color: var(--muted); gap: 2px; }
+  select, input[type=search] { font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink); }
+  input[type=search] { min-width: 220px; }
+
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 16px; overflow-x: auto; }
+  .tabs button { font: inherit; background: none; border: 0; padding: 10px 14px; cursor: pointer; color: var(--muted);
+    border-bottom: 3px solid transparent; white-space: nowrap; }
+  .tabs button[aria-selected=true] { color: var(--ink); border-bottom-color: var(--brand); font-weight: 600; }
+
+  .panel { display: none; }
+  .panel.activo { display: block; }
+  .panel h2 { display: none; }
+  .tabla-wrap { overflow-x: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+  table { border-collapse: collapse; width: 100%; font-size: .92rem; }
+  th, td { padding: 9px 12px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
+  th { background: color-mix(in srgb, var(--brand) 10%, var(--panel)); font-size: .82rem; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); white-space: nowrap; }
+  td.num, th.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  tfoot td { font-weight: 700; border-top: 2px solid var(--line); border-bottom: 0; }
+  .tag { display: inline-block; padding: 1px 9px; border-radius: 99px; font-size: .8rem; font-weight: 600; border: 1px solid currentColor; white-space: nowrap; }
+  .tag.ok { background: var(--ok-bg); color: var(--ok); } .tag.warn { background: var(--warn-bg); color: var(--warn); }
+  .tag.idea { background: var(--idea-bg); color: var(--idea); } .tag.alta { background: var(--alta-bg); color: var(--alta); }
+  .vacio { padding: 26px; text-align: center; color: var(--muted); }
+  footer { color: var(--muted); font-size: .85rem; padding-top: 22px; }
+
+  .solo-impresion { display: none; }
+
+  @media print {
+    :root { color-scheme: light; --bg: #fff; --panel: #fff; --ink: #000; --muted: #444; --line: #bbb; --brand: #1f5c57;
+      --ok: #1d5a37; --warn: #7a4a06; --idea: #2c3b6b; --alta: #8a2113;
+      --ok-bg: #fff; --warn-bg: #fff; --idea-bg: #fff; --alta-bg: #fff; }
+    @page { size: landscape; margin: 12mm; }
+    body { font-size: 11pt; background: #fff; }
+    header, main { max-width: none; padding-left: 0; padding-right: 0; }
+    .acciones, .filtros, .tabs, #estado, footer .no-print { display: none !important; }
+    .solo-impresion { display: block; }
+    .panel { display: block !important; margin-top: 18px; }
+    .panel h2 { display: block; break-after: avoid; }
+    .tabla-wrap { border: 0; overflow: visible; }
+    tr { break-inside: avoid; }
+    thead { display: table-header-group; }
+    th { background: #eee !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .dato, .avance { break-inside: avoid; }
+    #resumenPrint { break-after: page; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Panel de trabajos</h1>
+  <p class="sub">Administración regional · casas de oración</p>
+  <div class="solo-impresion" style="margin-top:8px">
+    <b>Informe de avance para reunión de administración</b><br>
+    Emitido el <span id="pFecha"></span> · Fuente: <span id="pFuente"></span> · Filtro: <span id="pFiltro"></span>
+  </div>
+</header>
+
+<main>
+  <div class="acciones">
+    <label class="btn primario" for="archivo" tabindex="0" id="btnCargar">Cargar Excel</label>
+    <input type="file" id="archivo" accept=".xlsx,.xls">
+    <a class="btn" href="plantilla-trabajos.xlsx" download>Descargar plantilla</a>
+    <button class="btn" id="btnImprimir" type="button">Imprimir informe</button>
+  </div>
+  <div id="estado" role="status"></div>
+
+  <section class="resumen" id="resumen" aria-label="Resumen"></section>
+  <div class="avance" id="avance"></div>
+
+  <div class="filtros">
+    <label>Casa de oración
+      <select id="filtroCasa"><option value="">Todas</option></select>
+    </label>
+    <label>Buscar
+      <input type="search" id="buscar" placeholder="Título, nota o detalle">
+    </label>
+  </div>
+
+  <div class="tabs" role="tablist">
+    <button role="tab" data-tab="aprobados" aria-selected="true">Trabajos aprobados</button>
+    <button role="tab" data-tab="pendientes" aria-selected="false">Trabajos pendientes</button>
+    <button role="tab" data-tab="porAnalizar" aria-selected="false">Proyectos por analizar</button>
+    <button role="tab" data-tab="porCasa" aria-selected="false">Resumen por casa</button>
+  </div>
+
+  <section class="panel" id="p-aprobados"><h2>Trabajos aprobados en reunión de ministerio</h2><div class="tabla-wrap" id="t-aprobados"></div></section>
+  <section class="panel" id="p-pendientes"><h2>Trabajos pendientes</h2><div class="tabla-wrap" id="t-pendientes"></div></section>
+  <section class="panel" id="p-porAnalizar"><h2>Proyectos por analizar</h2><div class="tabla-wrap" id="t-porAnalizar"></div></section>
+  <section class="panel" id="p-porCasa"><h2>Resumen por casa de oración</h2><div class="tabla-wrap" id="t-porCasa"></div></section>
+
+  <footer>
+    <p>Aprobados = autorizados en reunión de ministerio. Lo que viene de reunión de administración queda en "por analizar" hasta pasar por ministerio. "Terminado" se toma como trabajo ya realizado; el panel no registra gasto real.</p>
+    <p class="no-print">El Excel se lee dentro de tu navegador: el archivo no se sube a ningún servidor.</p>
+  </footer>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const clp = n => new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 }).format(n || 0);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fecha = iso => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || ''); return m ? `${m[3]}-${m[2]}-${m[1]}` : (iso || ''); };
+const norm = s => String(s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+let DATA = { casas: [], aprobados: [], pendientes: [], porAnalizar: [] };
+let fuente = 'Sin datos', tab = 'aprobados';
+
+/* ---------- Lectura del Excel ---------- */
+const ALIAS = {
+  id: ['id'], casa: ['casa', 'casadeoracion'],
+  titulo: ['trabajo', 'proyecto', 'titulo'],
+  presupuesto: ['presupuesto'], estimado: ['montoestimado', 'estimado'],
+  reunion: ['fechareunionministerio', 'fechareunion', 'reunion', 'fecha'],
+  avance: ['avance', 'estado'], nota: ['nota', 'notas'],
+  origen: ['origen'], prioridad: ['prioridad'], espera: ['espera'], detalle: ['detalle']
+};
+function campo(fila, clave) {
+  for (const k of Object.keys(fila)) if (ALIAS[clave].includes(norm(k))) return fila[k];
+  return '';
+}
+function aNumero(v) {
+  if (typeof v === 'number') return v;
+  const t = String(v ?? '').replace(/[^0-9,.\-]/g, '').replace(/\./g, '').replace(',', '.');
+  const n = parseFloat(t); return isNaN(n) ? 0 : n;
+}
+function aISO(v) {
+  if (typeof v === 'number' && v > 20000) {
+    const d = new Date(Math.round((v - 25569) * 86400000));
+    return d.toISOString().slice(0, 10);
+  }
+  const t = String(v ?? '').trim();
+  let m = /^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})$/.exec(t);
+  if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+  m = /^(\d{4})-(\d{2})-(\d{2})/.exec(t);
+  return m ? `${m[1]}-${m[2]}-${m[3]}` : t;
+}
+function normAvance(v, avisos, ref) {
+  const n = norm(v);
+  if (['terminado', 'terminada', 'finalizado', 'finalizada', 'listo'].includes(n)) return 'Terminado';
+  if (['enejecucion', 'ejecucion', 'enproceso', 'enobra'].includes(n)) return 'En ejecución';
+  if (['', 'porejecutar', 'aprobado', 'pendiente'].includes(n)) return 'Por ejecutar';
+  avisos.push(`${ref}: avance "${v}" no reconocido; se tomó como "Por ejecutar".`);
+  return 'Por ejecutar';
+}
+function normPrioridad(v) {
+  const n = norm(v);
+  return n === 'alta' ? 'Alta' : n === 'baja' ? 'Baja' : n === 'media' ? 'Media' : (String(v || '').trim() || 'Media');
+}
+function hoja(wb, nombre) {
+  const real = wb.SheetNames.find(s => norm(s) === norm(nombre));
+  return real ? XLSX.utils.sheet_to_json(wb.Sheets[real], { defval: '', raw: true }) : null;
+}
+function procesarLibro(wb) {
+  const avisos = [];
+  const casasOficiales = hoja(wb, 'Casas');
+  const conocidas = new Set((casasOficiales || []).map(r => String(Object.values(r)[0]).trim()).filter(Boolean));
+  const vistas = new Set();
+  const util = fila => String(campo(fila, 'id')).trim().toUpperCase() !== 'EJEMPLO' &&
+                       (String(campo(fila, 'casa')).trim() || String(campo(fila, 'titulo')).trim());
+  const revisaCasa = (casa, ref) => {
+    vistas.add(casa);
+    if (conocidas.size && casa && !conocidas.has(casa)) avisos.push(`${ref}: la casa "${casa}" no está en la hoja Casas.`);
+  };
+
+  const r = { aprobados: [], pendientes: [], porAnalizar: [] };
+  const hA = hoja(wb, 'Aprobados'), hP = hoja(wb, 'Pendientes'), hY = hoja(wb, 'PorAnalizar');
+  if (!hA && !hP && !hY) throw new Error('El archivo no tiene las hojas Aprobados, Pendientes ni PorAnalizar. Usa la plantilla.');
+
+  (hA || []).map((f, i) => ({ ...f, __fila: i + 2 })).filter(util).forEach(f => {
+    const ref = `Aprobados fila ${f.__fila}`, casa = String(campo(f, 'casa')).trim();
+    revisaCasa(casa, ref);
+    r.aprobados.push({ id: String(campo(f, 'id')), casa, titulo: String(campo(f, 'titulo')).trim(),
+      presupuesto: aNumero(campo(f, 'presupuesto')), reunion: aISO(campo(f, 'reunion')),
+      avance: normAvance(campo(f, 'avance'), avisos, ref), nota: String(campo(f, 'nota')) });
+  });
+  (hP || []).map((f, i) => ({ ...f, __fila: i + 2 })).filter(util).forEach(f => {
+    const casa = String(campo(f, 'casa')).trim();
+    revisaCasa(casa, `Pendientes fila ${f.__fila}`);
+    r.pendientes.push({ id: String(campo(f, 'id')), casa, titulo: String(campo(f, 'titulo')).trim(),
+      estimado: aNumero(campo(f, 'estimado')), origen: String(campo(f, 'origen')),
+      prioridad: normPrioridad(campo(f, 'prioridad')), espera: String(campo(f, 'espera')) });
+  });
+  (hY || []).map((f, i) => ({ ...f, __fila: i + 2 })).filter(util).forEach(f => {
+    const casa = String(campo(f, 'casa')).trim();
+    revisaCasa(casa, `PorAnalizar fila ${f.__fila}`);
+    r.porAnalizar.push({ id: String(campo(f, 'id')), casa, titulo: String(campo(f, 'titulo')).trim(),
+      origen: String(campo(f, 'origen')), detalle: String(campo(f, 'detalle')) });
+  });
+
+  const lista = [...(conocidas.size ? conocidas : [])];
+  vistas.forEach(c => { if (c && !lista.includes(c)) lista.push(c); });
+  return { data: { casas: lista, ...r }, avisos };
+}
+
+async function cargarArchivo(file) {
+  try {
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: 'array' });
+    const { data, avisos } = procesarLibro(wb);
+    DATA = data; fuente = file.name;
+    poblarCasas();
+    const n = data.aprobados.length + data.pendientes.length + data.porAnalizar.length;
+    mostrarEstado(`Cargado "${esc(file.name)}": ${data.aprobados.length} aprobados, ${data.pendientes.length} pendientes, ${data.porAnalizar.length} por analizar.` +
+      (n === 0 ? ' No se encontraron filas con datos (la fila EJEMPLO se ignora).' : ''), avisos);
+    pintar();
+  } catch (e) {
+    mostrarEstado('No se pudo leer el archivo: ' + esc(e.message), [], true);
+  }
+}
+function mostrarEstado(msg, avisos = [], aviso = false) {
+  const el = $('estado');
+  const extra = avisos.length ? `<ul>${avisos.slice(0, 6).map(a => `<li>${esc(a)}</li>`).join('')}${avisos.length > 6 ? `<li>…y ${avisos.length - 6} avisos más.</li>` : ''}</ul>` : '';
+  el.innerHTML = msg + extra;
+  el.className = (aviso || avisos.length) ? 'aviso' : '';
+  el.style.display = 'block';
+}
+
+/* ---------- Filtros y cálculo ---------- */
+function poblarCasas() {
+  const sel = $('filtroCasa'); const actual = sel.value;
+  sel.innerHTML = '<option value="">Todas</option>' + DATA.casas.map(c => `<option>${esc(c)}</option>`).join('');
+  sel.value = DATA.casas.includes(actual) ? actual : '';
+}
+function vista() {
+  const casa = $('filtroCasa').value, q = $('buscar').value.toLowerCase();
+  const f = l => l.filter(i => (!casa || i.casa === casa) &&
+    (!q || `${i.titulo} ${i.nota || ''} ${i.detalle || ''} ${i.origen || ''}`.toLowerCase().includes(q)));
+  return { ap: f(DATA.aprobados), pe: f(DATA.pendientes), an: f(DATA.porAnalizar), casa, q };
+}
+const suma = (l, k) => l.reduce((s, i) => s + (i[k] || 0), 0);
+
+/* ---------- Pintado ---------- */
+const claseAvance = a => a === 'Terminado' ? 'ok' : a === 'En ejecución' ? 'idea' : 'warn';
+const clasePrio = p => p === 'Alta' ? 'alta' : p === 'Media' ? 'idea' : '';
+const vacio = t => `<div class="vacio">${t}</div>`;
+
+function pintarResumen(v) {
+  const total = suma(v.ap, 'presupuesto');
+  const term = suma(v.ap.filter(i => i.avance === 'Terminado'), 'presupuesto');
+  const pend = total - term;
+  const pct = total ? Math.round(term / total * 100) : 0;
+  $('resumen').innerHTML = [
+    [clp(total), `Presupuesto aprobado (${v.ap.length} trabajos)`],
+    [clp(term), `En trabajos terminados (${v.ap.filter(i => i.avance === 'Terminado').length})`],
+    [clp(pend), `Aprobado aún sin terminar (${v.ap.filter(i => i.avance !== 'Terminado').length})`],
+    [clp(suma(v.pe, 'estimado')), `Estimado pendiente (${v.pe.length} trabajos)`],
+    [v.an.length, 'Proyectos por analizar']
+  ].map(([n, l]) => `<div class="dato"><b>${n}</b><span>${l}</span></div>`).join('');
+  $('avance').innerHTML = `<div class="fila"><span>Avance del presupuesto aprobado</span><b>${pct}% terminado</b></div>
+    <div class="barra-fondo" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><div class="barra-relleno" style="width:${pct}%"></div></div>`;
+}
+
+function tabla(cols, filas, pie) {
+  if (!filas.length) return vacio('No hay elementos con este filtro.');
+  return `<table><thead><tr>${cols.map(c => `<th class="${c.num ? 'num' : ''}">${c.t}</th>`).join('')}</tr></thead>
+    <tbody>${filas.join('')}</tbody>${pie ? `<tfoot>${pie}</tfoot>` : ''}</table>`;
+}
+
+function pintarTablas(v) {
+  $('t-aprobados').innerHTML = tabla(
+    [{t:'ID'},{t:'Casa'},{t:'Trabajo'},{t:'Presupuesto',num:1},{t:'Reunión ministerio'},{t:'Avance'},{t:'Nota'}],
+    v.ap.map(i => `<tr><td>${esc(i.id)}</td><td>${esc(i.casa)}</td><td>${esc(i.titulo)}</td><td class="num">${clp(i.presupuesto)}</td>
+      <td>${fecha(i.reunion)}</td><td><span class="tag ${claseAvance(i.avance)}">${esc(i.avance)}</span></td><td>${esc(i.nota)}</td></tr>`),
+    `<tr><td colspan="3">Total</td><td class="num">${clp(suma(v.ap, 'presupuesto'))}</td><td colspan="3"></td></tr>`);
+
+  const rank = { Alta: 0, Media: 1, Baja: 2 };
+  const pe = [...v.pe].sort((a, b) => (rank[a.prioridad] ?? 3) - (rank[b.prioridad] ?? 3));
+  $('t-pendientes').innerHTML = tabla(
+    [{t:'ID'},{t:'Casa'},{t:'Trabajo'},{t:'Monto estimado',num:1},{t:'Prioridad'},{t:'Origen'},{t:'Espera'}],
+    pe.map(i => `<tr><td>${esc(i.id)}</td><td>${esc(i.casa)}</td><td>${esc(i.titulo)}</td><td class="num">${clp(i.estimado)}</td>
+      <td><span class="tag ${clasePrio(i.prioridad)}">${esc(i.prioridad)}</span></td><td>${esc(i.origen)}</td><td>${esc(i.espera)}</td></tr>`),
+    `<tr><td colspan="3">Total estimado</td><td class="num">${clp(suma(v.pe, 'estimado'))}</td><td colspan="3"></td></tr>`);
+
+  $('t-porAnalizar').innerHTML = tabla(
+    [{t:'ID'},{t:'Casa'},{t:'Proyecto'},{t:'Origen'},{t:'Detalle'}],
+    v.an.map(i => `<tr><td>${esc(i.id)}</td><td>${esc(i.casa)}</td><td>${esc(i.titulo)}</td><td>${esc(i.origen)}</td><td>${esc(i.detalle)}</td></tr>`));
+
+  const casas = [...new Set([...v.ap, ...v.pe, ...v.an].map(i => i.casa))].filter(Boolean);
+  const filas = casas.map(c => {
+    const a = v.ap.filter(i => i.casa === c), p = v.pe.filter(i => i.casa === c), y = v.an.filter(i => i.casa === c);
+    const term = suma(a.filter(i => i.avance === 'Terminado'), 'presupuesto');
+    return { c, na: a.length, tot: suma(a, 'presupuesto'), term, sin: suma(a, 'presupuesto') - term, np: p.length, est: suma(p, 'estimado'), ny: y.length };
+  });
+  const T = k => filas.reduce((s, f) => s + f[k], 0);
+  $('t-porCasa').innerHTML = tabla(
+    [{t:'Casa'},{t:'Aprobados',num:1},{t:'Presupuesto aprobado',num:1},{t:'Terminado',num:1},{t:'Sin terminar',num:1},{t:'Pendientes',num:1},{t:'Estimado pendiente',num:1},{t:'Por analizar',num:1}],
+    filas.map(f => `<tr><td>${esc(f.c)}</td><td class="num">${f.na}</td><td class="num">${clp(f.tot)}</td><td class="num">${clp(f.term)}</td>
+      <td class="num">${clp(f.sin)}</td><td class="num">${f.np}</td><td class="num">${clp(f.est)}</td><td class="num">${f.ny}</td></tr>`),
+    `<tr><td>Total</td><td class="num">${T('na')}</td><td class="num">${clp(T('tot'))}</td><td class="num">${clp(T('term'))}</td>
+      <td class="num">${clp(T('sin'))}</td><td class="num">${T('np')}</td><td class="num">${clp(T('est'))}</td><td class="num">${T('ny')}</td></tr>`);
+}
+
+function pintar() {
+  const v = vista();
+  pintarResumen(v); pintarTablas(v);
+  document.querySelectorAll('.panel').forEach(p => p.classList.toggle('activo', p.id === 'p-' + tab));
+  $('pFuente').textContent = fuente;
+  $('pFiltro').textContent = (v.casa || 'Todas las casas') + (v.q ? ` · búsqueda "${v.q}"` : '');
+}
+
+/* ---------- Eventos ---------- */
+$('archivo').addEventListener('change', e => { if (e.target.files[0]) cargarArchivo(e.target.files[0]); e.target.value = ''; });
+$('btnCargar').addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('archivo').click(); } });
+$('filtroCasa').addEventListener('change', pintar);
+$('buscar').addEventListener('input', pintar);
+$('btnImprimir').addEventListener('click', () => { $('pFecha').textContent = new Date().toLocaleDateString('es-CL'); window.print(); });
+window.addEventListener('beforeprint', () => { $('pFecha').textContent = new Date().toLocaleDateString('es-CL'); });
+document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => {
+  tab = b.dataset.tab;
+  document.querySelectorAll('.tabs button').forEach(x => x.setAttribute('aria-selected', x === b));
+  pintar();
+}));
+['dragenter', 'dragover'].forEach(ev => window.addEventListener(ev, e => { e.preventDefault(); document.body.classList.add('arrastrando'); }));
+['dragleave', 'drop'].forEach(ev => window.addEventListener(ev, e => { e.preventDefault(); document.body.classList.remove('arrastrando'); }));
+window.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) cargarArchivo(f); });
+
+/* ---------- Arranque: datos de ejemplo desde data.json ---------- */
+(async function () {
+  try {
+    const r = await fetch('data.json', { cache: 'no-store' });
+    DATA = await r.json();
+    fuente = 'Datos de ejemplo (data.json)';
+    mostrarEstado('Estás viendo datos de ejemplo. Descarga la plantilla, llénala y súbela con "Cargar Excel".');
+  } catch (e) {
+    mostrarEstado('Sin datos todavía. Descarga la plantilla, llénala y súbela con "Cargar Excel".');
+  }
+  poblarCasas(); pintar();
+})();
+</script>
+</body>
+</html>
